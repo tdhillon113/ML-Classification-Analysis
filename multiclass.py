@@ -1,24 +1,3 @@
-"""
-Cancer Gene Expression Classifier
-==================================
-Breast cancer subtype classification using gene expression data (GSE45827).
-Models: Kernel SVM, Random Forest, Logistic Regression, Naive Bayes
-
-Expected columns: 'samples', 'type', and gene expression feature columns (_at suffix).
-
-── HOW TO SET YOUR DATASET ──────────────────────────────────────────────────
-Option 1 (recommended): Edit the line below and set DATASET_PATH to your CSV:
-
-    DATASET_PATH = "Breast_GSE45827.csv"
-
-Option 2: Pass it on the command line at runtime:
-
-    python main.py --data path/to/Breast_GSE45827.csv
-
-Download the dataset from Kaggle:
-  https://www.kaggle.com/datasets/brunogrisci/breast-cancer-gene-expression-cumida
-─────────────────────────────────────────────────────────────────────────────
-"""
 
 # ══════════════════════════════════════════════════════════════════════════════
 #  DATASET PATH — edit this to point to your CSV file
