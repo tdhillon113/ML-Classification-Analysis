@@ -4,13 +4,27 @@ Cancer Gene Expression Classifier
 Breast cancer subtype classification using gene expression data (GSE45827).
 Models: Kernel SVM, Random Forest, Logistic Regression, Naive Bayes
 
-Dataset: Breast_GSE45827.csv
 Expected columns: 'samples', 'type', and gene expression feature columns (_at suffix).
 
-Usage:
+── HOW TO SET YOUR DATASET ──────────────────────────────────────────────────
+Option 1 (recommended): Edit the line below and set DATASET_PATH to your CSV:
+
+    DATASET_PATH = "Breast_GSE45827.csv"
+
+Option 2: Pass it on the command line at runtime:
+
     python main.py --data path/to/Breast_GSE45827.csv
-    python main.py  # defaults to Breast_GSE45827.csv in the current directory
+
+Download the dataset from Kaggle:
+  https://www.kaggle.com/datasets/brunogrisci/breast-cancer-gene-expression-cumida
+─────────────────────────────────────────────────────────────────────────────
 """
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  DATASET PATH — edit this to point to your CSV file
+# ══════════════════════════════════════════════════════════════════════════════
+DATASET_PATH = "Breast_GSE45827.csv"
+# ══════════════════════════════════════════════════════════════════════════════
 
 import argparse
 import os
@@ -20,8 +34,8 @@ warnings.filterwarnings("ignore")
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib
-matplotlib.use("Agg")  # non-interactive backend; use "TkAgg" or "Qt5Agg" for live windows
+from os.path import join, dirname, abspath, exists
+from os import mkdir
 
 from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier
@@ -49,11 +63,18 @@ np.random.seed(42)
 # HELPERS
 # ──────────────────────────────────────────────────────────────────────────────
 
-def save_and_show(filename: str) -> None:
-    """Save the current figure and print confirmation."""
-    plt.savefig(filename, dpi=150, bbox_inches="tight")
-    plt.close()
-    print(f"  [saved] {filename}")
+# directory where plots are saved — matches the reference project layout
+plots_directory = join(dirname(abspath(__file__)), "plots")
+if not exists(plots_directory):
+    mkdir(plots_directory)
+
+
+def _save_fig(fig: plt.Figure, filename: str) -> None:
+    """Save a specific figure to the plots directory and close it."""
+    path = join(plots_directory, filename)
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    print(f"  [saved] {path}")
 
 
 def separator(title: str = "", width: int = 65) -> None:
@@ -92,14 +113,15 @@ def eda(df: pd.DataFrame) -> None:
     print(df["type"].value_counts().to_string())
 
     # ── Class distribution bar chart ──────────────────────────────────────────
-    fig, ax = plt.subplots(figsize=(8, 5))
+    fig_eda, ax = plt.subplots(figsize=(8, 5))
     df["type"].value_counts().plot(kind="bar", ax=ax, color="steelblue", edgecolor="white")
     ax.set_title("Class Distribution – Cancer Subtypes", fontweight="bold")
     ax.set_xlabel("Cancer Subtype")
     ax.set_ylabel("Sample Count")
     ax.tick_params(axis="x", rotation=30)
     plt.tight_layout()
-    save_and_show("eda_class_distribution.png")
+    plt.show()
+    _save_fig(fig_eda, "eda_class_distribution.png")
 
     # ── Summary statistics (numeric columns) ──────────────────────────────────
     print("\n  Summary Statistics (first 5 gene columns):")
@@ -263,6 +285,7 @@ def plot_learning_curves(svm_search, rf_search, lr_search, nb_search,
         (nb_search.best_estimator_,  "Naive Bayes",         "lc_nb.png"),
     ]
 
+    lc_figs = []
     for estimator, title, filename in entries:
         train_sizes = np.linspace(0.1, 1.0, 8)
         train_sz, train_scores, val_scores = learning_curve(
@@ -285,7 +308,11 @@ def plot_learning_curves(svm_search, rf_search, lr_search, nb_search,
         ax.set_ylabel("Balanced Accuracy")
         ax.legend(loc="best")
         plt.tight_layout()
-        save_and_show(filename)
+        lc_figs.append((fig, filename))
+
+    plt.show()
+    for fig, filename in lc_figs:
+        _save_fig(fig, filename)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -297,6 +324,8 @@ def plot_validation_curves(svm_search, rf_search, lr_search, nb_search,
     separator("7. VALIDATION CURVES")
 
     scoring = "balanced_accuracy"
+
+    vc_figs = []
 
     def _plot(estimator, param_name, param_range, title, filename, log=True):
         train_scores, val_scores = validation_curve(
@@ -320,7 +349,7 @@ def plot_validation_curves(svm_search, rf_search, lr_search, nb_search,
         ax.set_ylabel("Balanced Accuracy")
         ax.legend(loc="best")
         plt.tight_layout()
-        save_and_show(filename)
+        vc_figs.append((fig, filename))
 
     _plot(svm_search.best_estimator_, "clf__C",
           np.array([0.001, 0.01, 0.1, 1, 10, 100]),
@@ -337,6 +366,10 @@ def plot_validation_curves(svm_search, rf_search, lr_search, nb_search,
     _plot(nb_search.best_estimator_, "clf__var_smoothing",
           np.logspace(-9, -3, 4),
           "Naive Bayes – var_smoothing", "vc_nb_vs.png")
+
+    plt.show()
+    for fig, filename in vc_figs:
+        _save_fig(fig, filename)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -392,75 +425,87 @@ def cross_validation_evaluation(svm_search, rf_search, lr_search, nb_search,
 # 9. RESULTS TABLE
 # ──────────────────────────────────────────────────────────────────────────────
 
-def results_table(svm_search, rf_search, lr_search, nb_search,
-                   X_train_filt, X_test_filt, y_train, y_test):
-    separator("9. RESULTS TABLE — Train | Validation (CV) | Test")
+def styled_results_table(svm_search, rf_search, lr_search, nb_search,
+                          X_test_filt, y_test, class_names):
+    separator("9b. STYLED SUMMARY RESULTS TABLE")
 
-    cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
     models = {
         "Kernel SVM":          svm_search.best_estimator_,
         "Random Forest":       rf_search.best_estimator_,
         "Logistic Regression": lr_search.best_estimator_,
         "Naive Bayes":         nb_search.best_estimator_,
     }
+    hyperparams = {
+        "Kernel SVM":          f"kernel: rbf\nC: {svm_search.best_params_['clf__C']}\ngamma: {svm_search.best_params_['clf__gamma']}",
+        "Random Forest":       f"n_estimators: {rf_search.best_params_['clf__n_estimators']}\nmax_features: {rf_search.best_params_['clf__max_features']}",
+        "Logistic Regression": f"C: {lr_search.best_params_['clf__C']}\npenalty: {lr_search.best_params_['clf__penalty']}\nSelectKBest k=1000",
+        "Naive Bayes":         f"var_smoothing: {nb_search.best_params_['clf__var_smoothing']:.0e}\nSelectKBest k={nb_search.best_params_['select__k']}",
+    }
 
-    table_data = []
-    row_labels  = []
-
-    print(f"\n  {'Model':<22} {'Train Bal/F1':<18} {'CV Bal/F1':<18} {'Test Bal/F1'}")
-    print("  " + "-" * 75)
-
+    rows = []
     for name, model in models.items():
-        y_tr_pred = model.predict(X_train_filt)
-        train_bal = balanced_accuracy_score(y_train, y_tr_pred)
-        train_f1  = f1_score(y_train, y_tr_pred, average="macro")
+        y_pred   = model.predict(X_test_filt)
+        bal_acc  = balanced_accuracy_score(y_test, y_pred)
+        macro_f1 = f1_score(y_test, y_pred, average="macro")
+        rows.append({
+            "model":    name,
+            "params":   hyperparams[name],
+            "macro_f1": f"{macro_f1:.4f}",
+            "bal_acc":  f"{bal_acc:.4f}",
+        })
+        print(f"  {name}: Bal Acc={bal_acc:.4f}  Macro F1={macro_f1:.4f}")
 
-        val_bal = cross_val_score(model, X_train_filt, y_train,
-                                   cv=cv, scoring="balanced_accuracy", n_jobs=-1).mean()
-        val_f1  = cross_val_score(model, X_train_filt, y_train,
-                                   cv=cv, scoring="f1_macro",          n_jobs=-1).mean()
+    # ── Build figure ──────────────────────────────────────────────────────────
+    col_headers = ["Breast Cancer\nSubtype", "Hyperparameters",
+                   "Macro-Average\nF1 Score", "Balanced\nAccuracy"]
+    n_rows = len(rows)
 
-        y_te_pred = model.predict(X_test_filt)
-        test_bal  = balanced_accuracy_score(y_test, y_te_pred)
-        test_f1   = f1_score(y_test, y_te_pred, average="macro")
+    fig_h = 1.0 + n_rows * 1.6
+    fig_w = 14
 
-        row_labels.append(name)
-        table_data.append([
-            f"{train_bal:.4f} / {train_f1:.4f}",
-            f"{val_bal:.4f}  / {val_f1:.4f}",
-            f"{test_bal:.4f} / {test_f1:.4f}",
-        ])
-        print(f"  {name:<22} {train_bal:.4f}/{train_f1:.4f}        "
-              f"{val_bal:.4f}/{val_f1:.4f}        "
-              f"{test_bal:.4f}/{test_f1:.4f}")
-
-    # ── Table figure ──────────────────────────────────────────────────────────
-    col_labels = ["Train\n(Bal Acc / Macro F1)",
-                  "Validation CV\n(Bal Acc / Macro F1)",
-                  "Test\n(Bal Acc / Macro F1)"]
-
-    fig, ax = plt.subplots(figsize=(13, 3))
+    fig, ax = plt.subplots(figsize=(fig_w, fig_h))
+    ax.set_xlim(0, fig_w)
+    ax.set_ylim(0, fig_h)
     ax.axis("off")
-    tbl = ax.table(cellText=table_data, rowLabels=row_labels,
-                   colLabels=col_labels, cellLoc="center", loc="center")
-    tbl.auto_set_font_size(False)
-    tbl.set_fontsize(10)
-    tbl.scale(1.3, 2.2)
 
-    for j in range(3):
-        tbl[(0, j)].set_facecolor("#2c3e50")
-        tbl[(0, j)].set_text_props(color="white", fontweight="bold")
-    for i in range(1, 5):
-        color = "#eaf0fb" if i % 2 == 0 else "white"
-        for j in range(-1, 3):
-            tbl[(i, j)].set_facecolor(color)
+    col_widths = [3.2, 4.8, 3.0, 3.0]
+    col_x = [0]
+    for w in col_widths[:-1]:
+        col_x.append(col_x[-1] + w)
 
-    plt.title("Model Performance: Train | Validation | Test\n"
-              "(Balanced Accuracy / Macro F1)",
-              fontsize=12, pad=15, fontweight="bold")
+    header_h   = 0.9
+    data_row_h = (fig_h - header_h) / n_rows
+    header_color = "#4a4a6a"
+    row_colors   = ["#ffffff", "#e8e8f0"]
+
+    def draw_cell(x, y, w, h, text, bg, fg="black", bold=False, fontsize=10):
+        rect = plt.Rectangle((x, y), w, h,
+                              facecolor=bg, edgecolor="#cccccc", linewidth=0.6)
+        ax.add_patch(rect)
+        ax.text(x + w / 2, y + h / 2, text,
+                ha="center", va="center", fontsize=fontsize,
+                color=fg, fontweight="bold" if bold else "normal",
+                multialignment="center", linespacing=1.4)
+
+    y_top = fig_h - header_h
+    for hdr, w, x in zip(col_headers, col_widths, col_x):
+        draw_cell(x, y_top, w, header_h, hdr,
+                  bg=header_color, fg="white", bold=True, fontsize=10.5)
+
+    for i, row in enumerate(rows):
+        bg = row_colors[i % 2]
+        y  = y_top - (i + 1) * data_row_h
+        cells = [row["model"], row["params"], row["macro_f1"], row["bal_acc"]]
+        for j, (cell_text, w, x) in enumerate(zip(cells, col_widths, col_x)):
+            draw_cell(x, y, w, data_row_h, cell_text, bg=bg, bold=(j == 0))
+
+    plt.title("Breast Cancer Gene Expression — Model Results Summary\n"
+              "Metrics: Macro-Average F1 Score  |  Balanced Accuracy",
+              fontsize=12, fontweight="bold", pad=14)
     plt.tight_layout()
-    save_and_show("results_table_final.png")
-
+    plt.figure(fig.number)   # make this fig the active window before show
+    plt.show(block=True)
+    _save_fig(fig, "styled_results_table.png")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 10. CV BAR CHART
@@ -499,7 +544,8 @@ def cv_bar_chart(cv_results: dict) -> None:
                 ha="center", va="bottom", fontsize=8)
 
     plt.tight_layout()
-    save_and_show("cv_comparison_chart.png")
+    plt.show()
+    _save_fig(fig, "cv_comparison_chart.png")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -528,7 +574,6 @@ def confusion_matrices(svm_search, rf_search, lr_search, nb_search,
         ).plot(ax=ax, colorbar=False, xticks_rotation=45)
         ax.set_title(name, fontweight="bold")
 
-        # Print classification report
         print(f"\n  Classification Report — {name}")
         print(classification_report(y_test, y_pred,
                                     target_names=class_names, zero_division=0))
@@ -536,7 +581,8 @@ def confusion_matrices(svm_search, rf_search, lr_search, nb_search,
     plt.suptitle("Normalized Confusion Matrices (Test Set)",
                  fontsize=14, fontweight="bold")
     plt.tight_layout()
-    save_and_show("confusion_matrices.png")
+    plt.show()
+    _save_fig(fig, "confusion_matrices.png")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -566,7 +612,8 @@ def feature_importances(rf_search, df, nonzero_mask):
     ax.set_xlabel("Feature Importance")
     ax.set_title("Top 20 Most Important Genes (Random Forest)", fontweight="bold")
     plt.tight_layout()
-    save_and_show("feature_importances.png")
+    plt.show()
+    _save_fig(fig, "feature_importances.png")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -577,19 +624,24 @@ def main():
     parser = argparse.ArgumentParser(
         description="Cancer Gene Expression Classifier (Breast GSE45827)")
     parser.add_argument(
-        "--data", default="Breast_GSE45827.csv",
-        help="Path to the CSV dataset (default: Breast_GSE45827.csv)")
+        "--data", default=None,
+        help="Path to the CSV dataset (overrides DATASET_PATH at top of file)")
     args = parser.parse_args()
 
-    if not os.path.isfile(args.data):
-        raise FileNotFoundError(
-            f"Dataset not found: {args.data}\n"
-            "Download from: https://www.kaggle.com/datasets/brunogrisci/"
-            "breast-cancer-gene-expression-cumida\n"
-            "Then run: python main.py --data path/to/Breast_GSE45827.csv")
+    csv_path = args.data if args.data else DATASET_PATH
 
-    # ── Pipeline ──────────────────────────────────────────────────────────────
-    df = load_data(args.data)
+    if not os.path.isfile(csv_path):
+        raise FileNotFoundError(
+            f"\n  Dataset not found: '{csv_path}'\n\n"
+            "  Fix option 1 — edit DATASET_PATH near the top of main.py:\n"
+            "      DATASET_PATH = \"path/to/Breast_GSE45827.csv\"\n\n"
+            "  Fix option 2 — pass the path on the command line:\n"
+            "      python main.py --data path/to/Breast_GSE45827.csv\n\n"
+            "  Download the dataset from Kaggle:\n"
+            "      https://www.kaggle.com/datasets/brunogrisci/"
+            "breast-cancer-gene-expression-cumida")
+
+    df = load_data(csv_path)
     eda(df)
 
     (X_train_filt, X_test_filt,
@@ -619,8 +671,8 @@ def main():
         svm_search, rf_search, lr_search, nb_search,
         X_train_filt, y_train)
 
-    results_table(svm_search, rf_search, lr_search, nb_search,
-                   X_train_filt, X_test_filt, y_train, y_test)
+    styled_results_table(svm_search, rf_search, lr_search, nb_search,
+                          X_test_filt, y_test, class_names)
 
     cv_bar_chart(cv_results)
 
@@ -630,18 +682,18 @@ def main():
     feature_importances(rf_search, df, nonzero_mask)
 
     separator("ALL DONE")
-    print("  Figures saved in the current directory:")
+    print(f"  All figures saved to: {plots_directory}/")
     saved = [
         "eda_class_distribution.png",
         "lc_svm.png", "lc_rf.png", "lc_lr.png", "lc_nb.png",
         "vc_svm_C.png", "vc_lr_C.png", "vc_rf_nest.png", "vc_nb_vs.png",
-        "results_table_final.png",
+        "styled_results_table.png",
         "cv_comparison_chart.png",
         "confusion_matrices.png",
         "feature_importances.png",
     ]
-    for f in saved:
-        print(f"    • {f}")
+    for fname in saved:
+        print(f"    • {fname}")
 
 
 if __name__ == "__main__":
