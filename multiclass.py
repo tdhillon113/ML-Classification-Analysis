@@ -772,7 +772,7 @@ def main():
         "eda_class_distribution.png",
         "lc_svm.png", "lc_rf.png", "lc_lr.png", "lc_nb.png",
         "vc_svm_C.png", "vc_lr_C.png", "vc_rf_nest.png", "vc_nb_vs.png",
-        "kfold_comparison_k5_vs_k7.png",
+        # "kfold_comparison_k5_vs_k7.png",
         "styled_results_table.png",
         "cv_comparison_chart.png",
         "confusion_matrices.png",
