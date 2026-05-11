@@ -702,7 +702,7 @@ def feature_importances(rf_search, feature_names_filt):
 # MAIN
 # ──────────────────────────────────────────────────────────────────────────────
 
-def main():
+def run_multiclass():
     parser = argparse.ArgumentParser(
         description="Cancer Gene Expression Classifier (Breast GSE45827)")
     parser.add_argument(
@@ -783,4 +783,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    run_multiclass()

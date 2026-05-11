@@ -47,7 +47,7 @@ FEATURE_COLUMNS = [
 
 TARGET_COLUMN = "quality_binary"
 RANDOM_STATE = 11
-N_SPLITS = 10
+N_SPLITS = 7
 
 SCORING = {
     "accuracy": "accuracy",
@@ -90,11 +90,10 @@ def clean_wine_quality_data(csv_path="wine_quality_merged.csv", save_cleaned=Fal
 
     return df
 
-def prepare_binary_data(csv_path="wine_quality_merged.csv", test_size=0.2):
+def prepare_binary_data(df, test_size=0.2):
     """
     Return train/test split (80/20) for the binary wine-quality task. :p
     """ 
-    df = clean_wine_quality_data(csv_path)
     X = df[FEATURE_COLUMNS]
     y = df[TARGET_COLUMN]
 
@@ -135,7 +134,7 @@ def generate_all_graphs(df, output_dir="plots"):
     plt.close()
     # correlation heatmap
     numeric_df = df.select_dtypes(include=[np.number])
-    sns.heatmap(numeric_df.corr(), annot=True, fmt=".2f", cmap="coolwarm")
+    sns.heatmap(numeric_df.corr(), annot=False, fmt=".2f", cmap="coolwarm")
     plt.title("Correlation Heatmap")
     plt.tight_layout()
     plt.savefig(output_dir / "correlation_heatmap.png")
@@ -143,7 +142,7 @@ def generate_all_graphs(df, output_dir="plots"):
 
 def _get_cv():
     """
-    Return a 10-fold stratified cross-validation splitter.
+    Return a 7-fold stratified cross-validation splitter.
     """
     return StratifiedKFold(n_splits=N_SPLITS, shuffle=True, random_state=RANDOM_STATE)
 
@@ -151,11 +150,13 @@ def _get_scores(model, X_test):
     """
     Return scores for ROC-AUC (probability for class 1).
     """
-    return model.predict_proba(X_test)[:, 1]
+    if hasattr(model, "predict_proba"):
+        return model.predict_proba(X_test)[:, 1]
+    return model.decision_function(X_test)
 
 def _evaluate_model(name, model, X_train, y_train, X_test, y_test):
     """
-    Fit a model, run 10-fold CV, and compute mean train/validation metrics and final test metrics.
+    Fit a model, run 7-fold CV, and compute mean train/validation metrics and final test metrics.
     """
     cv = _get_cv() #how to split into folds
     cv_results = cross_validate(
@@ -164,7 +165,6 @@ def _evaluate_model(name, model, X_train, y_train, X_test, y_test):
         y_train,
         cv=cv,
         scoring=SCORING, #my metrics
-        n_jobs=-1, #to help speedup by running multiple folds at the same time
         return_train_score=True,
     )
 
@@ -228,7 +228,6 @@ def run_logistic_regression(X_train, y_train, X_test, y_test):
         param_grid,
         scoring="f1", #optimize f1 on the positive class (high quality)
         cv=_get_cv(), #stratified k fold 10 splits
-        n_jobs=-1, #just to speed up again
     )
     search.fit(X_train, y_train)
 
@@ -256,7 +255,6 @@ def run_svm_rbf(X_train, y_train, X_test, y_test):
         ("model", SVC(
             kernel="rbf",
             class_weight="balanced",
-            probability=True
         )),
     ])
 
@@ -270,7 +268,6 @@ def run_svm_rbf(X_train, y_train, X_test, y_test):
         param_grid,
         scoring="f1",
         cv=_get_cv(),
-        n_jobs=-1,
     )
     search.fit(X_train, y_train)
 
@@ -309,7 +306,6 @@ def run_decision_tree(X_train, y_train, X_test, y_test):
         param_grid,
         scoring="f1",
         cv=_get_cv(),
-        n_jobs=-1,
     )
     search.fit(X_train, y_train)
 
@@ -335,7 +331,6 @@ def run_random_forest(X_train, y_train, X_test, y_test):
     model = RandomForestClassifier(
         random_state=RANDOM_STATE,
         class_weight="balanced",
-        n_jobs=-1
     )
 
     param_grid = {
@@ -349,7 +344,6 @@ def run_random_forest(X_train, y_train, X_test, y_test):
         param_grid,
         scoring="f1",
         cv=_get_cv(),
-        n_jobs=-1,
     )
     search.fit(X_train, y_train)
 
@@ -367,11 +361,11 @@ def run_random_forest(X_train, y_train, X_test, y_test):
 
     return results, fitted_model, cm, best_params
 
-def run_all_binary_models(csv_path="wine_quality_merged.csv"):
+def run_all_binary_models(df):
     """
     Run all four models, and return a summary table and fitted models and confusion matrices.
     """
-    X_train, X_test, y_train, y_test = prepare_binary_data(csv_path)
+    X_train, X_test, y_train, y_test = prepare_binary_data(df)
 
     all_results = []
     trained_models = {}
@@ -394,19 +388,16 @@ def run_all_binary_models(csv_path="wine_quality_merged.csv"):
 
     ordered_cols = [
         "model",
-
         "train_accuracy",
         "train_precision_high_quality",
         "train_recall_high_quality",
         "train_f1_high_quality",
         "train_roc_auc",
-
         "val_accuracy",
         "val_precision_high_quality",
         "val_recall_high_quality",
         "val_f1_high_quality",
         "val_roc_auc",
-
         "test_accuracy",
         "test_precision_high_quality",
         "test_recall_high_quality",
@@ -430,7 +421,6 @@ def plot_learning_curve(model, X, y, title, output_path):
         y,
         cv=_get_cv(),
         scoring="f1",
-        n_jobs=-1,
         train_sizes=np.linspace(0.1, 1.0, 10), #split into 10 parts
     )
 
@@ -469,7 +459,7 @@ def plot_learning_curve(model, X, y, title, output_path):
     plt.close()
 
 #tuning curves
-def plot_tuning_curve(model, X, y, param_name, param_range, title, output_path, log_scale=False):
+def plot_tuning_curve(model, X, y, param_name, param_range, title, output_path):
     """
     Plot training and validation F1 with mean lines and mean±std shaded regions.
     """
@@ -481,7 +471,6 @@ def plot_tuning_curve(model, X, y, param_name, param_range, title, output_path, 
         param_range=param_range,
         cv=_get_cv(),
         scoring="f1",
-        n_jobs=-1,
     )
 
     train_mean = train_scores.mean(axis=1)
@@ -542,8 +531,7 @@ def plot_logistic_tuning_curve(X_train, y_train, output_path):
         "model__C",
         [0.01, 0.1, 1, 10, 100],
         "Logistic Regression Tuning Curve (C)",
-        output_path,
-        log_scale=True,
+        output_path
     )
 def plot_svm_c_tuning_curve(X_train, y_train, output_path):
     """
@@ -554,8 +542,7 @@ def plot_svm_c_tuning_curve(X_train, y_train, output_path):
         ("model", SVC(
             kernel="rbf",
             gamma="scale",
-            class_weight="balanced",
-            probability=True
+            class_weight="balanced"
         )),
     ])
 
@@ -567,7 +554,6 @@ def plot_svm_c_tuning_curve(X_train, y_train, output_path):
         [0.1, 1, 10, 100],
         "SVM Tuning Curve (C)",
         output_path,
-        log_scale=True,
     )
 
 def plot_svm_gamma_tuning_curve(X_train, y_train, output_path):
@@ -579,8 +565,7 @@ def plot_svm_gamma_tuning_curve(X_train, y_train, output_path):
         ("model", SVC(
             kernel="rbf",
             C=1,
-            class_weight="balanced",
-            probability=True
+            class_weight="balanced"
         )),
     ])
 
@@ -591,8 +576,7 @@ def plot_svm_gamma_tuning_curve(X_train, y_train, output_path):
         "model__gamma",
         [0.01, 0.1, 1],
         "SVM Tuning Curve (gamma)",
-        output_path,
-        log_scale=True,
+        output_path
     )
 
 def plot_decision_tree_tuning_curve(X_train, y_train, output_path):
@@ -621,7 +605,6 @@ def plot_random_forest_tuning_curve(X_train, y_train, output_path):
     model = RandomForestClassifier(
         random_state=RANDOM_STATE,
         class_weight="balanced",
-        n_jobs=-1
     )
 
     plot_tuning_curve(
@@ -643,6 +626,42 @@ def save_confusion_matrix(cm, title, output_path):
     plt.title(title)
     plt.xlabel("Predicted")
     plt.ylabel("Actual")
+    plt.tight_layout()
+    plt.savefig(output_path)
+    plt.close()
+
+def plot_test_score_comparison(trained_models, X_test, y_test, output_path):
+    """
+    Plot test Accuracy and F1 for each model.
+    """
+    model_order = ["Logistic Regression", "SVM (RBF)", "Decision Tree", "Random Forest"]
+
+    acc_scores = []
+    f1_scores = []
+
+    for model_name in model_order:
+        model = trained_models[model_name]
+
+        y_pred = model.predict(X_test)
+
+        acc = accuracy_score(y_test, y_pred)
+        f1 = f1_score(y_test, y_pred)
+
+        acc_scores.append(acc)
+        f1_scores.append(f1)
+
+    x = np.arange(len(model_order))
+    width = 0.35
+
+    plt.figure()
+    plt.bar(x - width/2, acc_scores, width, label="Test Accuracy")
+    plt.bar(x + width/2, f1_scores, width, label="Test F1")
+
+    plt.title("Test Set Scores by Model")
+    plt.ylabel("Score")
+    plt.xticks(x, model_order, rotation=15)
+    plt.ylim(0, 1.05)
+    plt.legend()
     plt.tight_layout()
     plt.savefig(output_path)
     plt.close()
