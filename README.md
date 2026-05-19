@@ -106,7 +106,7 @@ The `plots/` directory contains all visualizations:
 python main.py
 ```
 
-> **Note**: The binary classification section may take a significant amount of time due to hyperparameter tuning.
+> **Note**: The binary classification section may take around 10 minutes of time due to hyperparameter tuning.
 
 
 ## Acknowledgments
