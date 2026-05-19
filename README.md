@@ -1,4 +1,4 @@
-# Binary Classification of Wine Quality and Multiclass Classification of Breast Cancer Subtype
+# Binary Classification of Wine Quality and Multiclass Classification of Breast Cancer Subtype (CSC156 - Machine Learning)
 
 ## This project implements machine learning pipelines for two classification tasks:
 
